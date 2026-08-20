@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: processcanvas
       POSTGRES_PASSWORD: processcanvas
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - processcanvas_postgres:/var/lib/postgresql/data
     healthcheck:
