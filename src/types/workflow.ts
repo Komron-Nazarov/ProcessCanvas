@@ -20,11 +20,3 @@ export type Workflow = {
   edges: WorkflowEdge[];
   updatedAt: string;
 };
-
-export const NODE_DEFAULTS: Record<WorkflowNodeType, WorkflowNodeData> = {
-  start: { label: "Start", description: "Entry point for this process", assignee: "", duration: "" },
-  task: { label: "New task", description: "Describe what needs to happen", assignee: "Unassigned", duration: "1 day" },
-  approval: { label: "Approval", description: "Review and approve the request", assignee: "Manager", duration: "4 hours" },
-  condition: { label: "Condition", description: "Choose the path based on a rule", assignee: "", duration: "" },
-  end: { label: "End", description: "Process completed", assignee: "", duration: "" },
-};

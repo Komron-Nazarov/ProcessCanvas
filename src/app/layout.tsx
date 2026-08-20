@@ -6,13 +6,13 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin", "cyrillic"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "ProcessCanvas — Workflow editor",
-  description: "Design clear, reliable business processes visually.",
+  title: "ProcessCanvas — Конструктор бизнес-процессов",
+  description: "Проектируйте понятные бизнес-процессы визуально.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ru" suppressHydrationWarning>
       <body className={inter.variable}>{children}</body>
     </html>
   );
