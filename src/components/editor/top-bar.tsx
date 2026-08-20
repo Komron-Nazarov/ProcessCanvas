@@ -1,35 +1,33 @@
-import { Box, Moon, Play, Redo2, Sun, Undo2 } from "lucide-react";
+"use client";
+
+import { CircleHelp, Info, Moon, Play, Redo2, Sun, Undo2 } from "lucide-react";
+import { useI18n } from "@/i18n/provider";
+import type { Locale } from "@/i18n/types";
 import { useEditorStore } from "@/store/editor-store";
 
-type TopBarProps = { dark: boolean; onToggleTheme: () => void };
-
-export function TopBar({ dark, onToggleTheme }: TopBarProps) {
+export function TopBar({ onGuide, onAbout }: { onGuide: () => void; onAbout: () => void }) {
+  const { t, locale, setLocale } = useI18n();
   const workflowName = useEditorStore((state) => state.workflowName);
   const setWorkflowName = useEditorStore((state) => state.setWorkflowName);
-
+  const theme = useEditorStore((state) => state.theme);
+  const setTheme = useEditorStore((state) => state.setTheme);
+  const saveStatus = useEditorStore((state) => state.saveStatus);
+  const undo = useEditorStore((state) => state.undo);
+  const redo = useEditorStore((state) => state.redo);
+  const canUndo = useEditorStore((state) => state.past.length > 0);
+  const canRedo = useEditorStore((state) => state.future.length > 0);
+  const changeLocale = (next: Locale) => { if (next !== locale) setLocale(next); };
   return (
-    <header className="flex h-16 shrink-0 items-center gap-4 border-b border-line bg-surface px-4 lg:px-5">
-      <div className="flex min-w-[205px] items-center gap-2.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white shadow-sm"><Box size={19} /></span>
-        <div><div className="text-sm font-bold tracking-tight">ProcessCanvas</div><div className="text-[10px] font-medium text-muted">Workflow Studio</div></div>
-      </div>
-      <div className="h-7 w-px bg-line" />
-      <div className="min-w-0 flex-1">
-        <input
-          aria-label="Workflow name"
-          value={workflowName}
-          onChange={(event) => setWorkflowName(event.target.value)}
-          className="w-full max-w-[360px] rounded-md border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-ink hover:border-line focus:border-brand focus:bg-canvas"
-        />
-        <div className="ml-2 mt-0.5 flex items-center gap-1.5 text-[10px] text-muted"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" />Draft · All changes saved locally</div>
-      </div>
+    <header className="top-bar flex h-[68px] shrink-0 items-center gap-4 border-b border-line bg-surface px-4 lg:px-5">
+      <div className="brand-area flex min-w-[214px] items-center gap-3"><span className="brand-mark"><i /><i /><i /></span><div><div className="text-[15px] font-extrabold tracking-[-0.035em]">ProcessCanvas</div><div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.13em] text-muted">{t("app.tagline")}</div></div></div>
+      <div className="h-8 w-px bg-line" />
+      <div className="min-w-0 flex-1"><input aria-label={t("top.workflowName")} value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} className="w-full max-w-[380px] rounded-md border border-transparent bg-transparent px-2 py-1 text-sm font-bold tracking-[-0.01em] text-ink transition hover:border-line focus:border-brand focus:bg-canvas" /><div className="ml-2 mt-0.5 flex items-center gap-1.5 text-[9px] font-medium text-muted"><span className={`h-1.5 w-1.5 rounded-full ${saveStatus === "saving" ? "animate-pulse bg-amber-400" : "bg-emerald-500"}`} />{saveStatus === "saving" ? t("status.saving") : t("status.saved")}<span className="hidden xl:inline">· {t("status.local")}</span></div></div>
       <div className="flex items-center gap-1">
-        <button disabled aria-label="Undo (coming soon)" title="Undo history is coming in PC-2" className="rounded-lg p-2 text-muted opacity-45"><Undo2 size={17} /></button>
-        <button disabled aria-label="Redo (coming soon)" title="Redo history is coming in PC-2" className="rounded-lg p-2 text-muted opacity-45"><Redo2 size={17} /></button>
-        <button onClick={onToggleTheme} aria-label={dark ? "Use light theme" : "Use dark theme"} title={dark ? "Light theme" : "Dark theme"} className="rounded-lg p-2 text-muted transition hover:bg-canvas hover:text-ink">
-          {dark ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-        <button disabled title="Run simulation will be available in PC-2" className="ml-2 flex items-center gap-2 rounded-lg bg-brand px-3.5 py-2 text-xs font-semibold text-white opacity-55" aria-label="Run workflow (coming soon)"><Play size={14} fill="currentColor" />Run</button>
+        <button onClick={() => undo()} disabled={!canUndo} aria-label={t("top.undo")} title={`${t("top.undo")} · Ctrl/⌘ Z`} className="icon-button"><Undo2 size={17} /></button><button onClick={() => redo()} disabled={!canRedo} aria-label={t("top.redo")} title={`${t("top.redo")} · Ctrl/⌘ Shift Z`} className="icon-button"><Redo2 size={17} /></button>
+        <span className="mx-1 h-5 w-px bg-line" /><button onClick={onGuide} aria-label={t("top.guide")} title={t("top.guide")} className="icon-button"><CircleHelp size={17} /></button><button onClick={onAbout} aria-label={t("top.about")} title={t("top.about")} className="icon-button"><Info size={17} /></button>
+        <div className="language-switch ml-1 flex rounded-lg border border-line bg-canvas p-0.5" aria-label={t("top.language")}>{(["ru", "en"] as Locale[]).map((item) => <button key={item} onClick={() => changeLocale(item)} className={`rounded-md px-2 py-1.5 text-[9px] font-bold uppercase transition ${locale === item ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"}`} aria-pressed={locale === item}>{item}</button>)}</div>
+        <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? t("top.themeLight") : t("top.themeDark")} title={theme === "dark" ? t("top.themeLight") : t("top.themeDark")} className="icon-button ml-1">{theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</button>
+        <button disabled title={t("top.runHint")} className="run-button ml-2" aria-label={`${t("top.run")}: ${t("top.runHint")}`}><Play size={13} fill="currentColor" />{t("top.run")}</button>
       </div>
     </header>
   );
