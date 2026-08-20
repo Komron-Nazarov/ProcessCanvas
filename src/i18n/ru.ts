@@ -196,7 +196,7 @@ export const ru = {
   "migration.keep": "Оставить локально",
   "about.title": "О ProcessCanvas",
   "about.description": "Portfolio-проект для наглядного проектирования понятных бизнес-процессов.",
-  "about.credit": "Спроектировано и разработано Комроном Назаровым",
+  "about.credit": "Спроектировал и разработал Комрон Назаров",
   "about.github": "Профиль GitHub",
   "about.portfolio": "Портфолио",
   "about.replay": "Показать интро",
