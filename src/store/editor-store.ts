@@ -13,9 +13,10 @@ import type { Locale } from "@/i18n/types";
 import type { PersistedWorkspace } from "@/lib/persistence";
 import { emptyTutorialEvents, type TutorialEvent, type TutorialEvents } from "@/lib/tutorial";
 import type { WorkflowEdge, WorkflowNode, WorkflowNodeData, WorkflowNodeType } from "@/types/workflow";
+import type { ApiProcess } from "@/lib/api-client";
 
-type EditorSnapshot = { workflowName: string; nodes: WorkflowNode[]; edges: WorkflowEdge[]; isDemo: boolean };
-type SaveStatus = "saved" | "saving";
+type EditorSnapshot = { workflowName: string; nodes: WorkflowNode[]; edges: WorkflowEdge[]; isDemo: boolean; currentProcessId: string | null; currentServerVersion: number | null };
+type SaveStatus = "saved" | "saving" | "error" | "offline";
 
 type EditorState = {
   workflowName: string;
@@ -35,6 +36,8 @@ type EditorState = {
   isDemo: boolean;
   hydrated: boolean;
   saveStatus: SaveStatus;
+  currentProcessId: string | null;
+  currentServerVersion: number | null;
   past: EditorSnapshot[];
   future: EditorSnapshot[];
   dragHistoryCaptured: boolean;
@@ -66,6 +69,10 @@ type EditorState = {
   hydrate: (workspace: PersistedWorkspace | null) => void;
   markSaving: () => void;
   markSaved: () => void;
+  markSaveError: (offline?: boolean) => void;
+  loadServerProcess: (process: ApiProcess) => void;
+  setServerVersion: (version: number) => void;
+  clearServerBinding: () => void;
   resetWorkspace: () => void;
 };
 
@@ -75,11 +82,13 @@ const initialDemo = createDemoWorkflow("ru");
 const uniqueId = (type: WorkflowNodeType) => `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const cloneNodes = (nodes: WorkflowNode[]) => nodes.map((node) => ({ ...node, data: { ...node.data }, position: { ...node.position } }));
 const cloneEdges = (edges: WorkflowEdge[]) => edges.map((edge) => ({ ...edge }));
-const capture = (state: Pick<EditorState, "workflowName" | "nodes" | "edges" | "isDemo">): EditorSnapshot => ({
+const capture = (state: Pick<EditorState, "workflowName" | "nodes" | "edges" | "isDemo" | "currentProcessId" | "currentServerVersion">): EditorSnapshot => ({
   workflowName: state.workflowName,
   nodes: cloneNodes(state.nodes),
   edges: cloneEdges(state.edges),
   isDemo: state.isDemo,
+  currentProcessId: state.currentProcessId,
+  currentServerVersion: state.currentServerVersion,
 });
 const history = (state: EditorState) => ({ past: [...state.past, capture(state)].slice(-HISTORY_LIMIT), future: [] as EditorSnapshot[] });
 
@@ -101,6 +110,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isDemo: true,
   hydrated: false,
   saveStatus: "saved",
+  currentProcessId: null,
+  currentServerVersion: null,
   past: [],
   future: [],
   dragHistoryCaptured: false,
@@ -193,10 +204,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     };
   }),
   deleteNodes: (deleted) => set((state) => ({ selectedNodeId: deleted.some((node) => node.id === state.selectedNodeId) ? null : state.selectedNodeId })),
-  clearWorkflow: () => set((state) => ({ ...history(state), workflowName: state.locale === "ru" ? "Новый процесс" : "New workflow", nodes: [], edges: [], selectedNodeId: null, isDemo: false, lastEditKey: null })),
+  clearWorkflow: () => set((state) => ({ ...history(state), workflowName: state.locale === "ru" ? "Новый процесс" : "New workflow", nodes: [], edges: [], selectedNodeId: null, isDemo: false, currentProcessId: null, currentServerVersion: null, lastEditKey: null })),
   restoreDemo: () => set((state) => {
     const demo = createDemoWorkflow(state.locale);
-    return { ...history(state), workflowName: demo.name, nodes: demo.nodes, edges: demo.edges, selectedNodeId: null, isDemo: true, lastEditKey: null };
+    return { ...history(state), workflowName: demo.name, nodes: demo.nodes, edges: demo.edges, selectedNodeId: null, isDemo: true, currentProcessId: null, currentServerVersion: null, lastEditKey: null };
   }),
   undo: () => {
     const state = get();
@@ -227,7 +238,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     tutorialEvents: emptyTutorialEvents(),
     tutorialBackup: state.tutorialActive ? state.tutorialBackup : capture(state),
     workflowName: state.locale === "ru" ? "Учебный процесс" : "Tutorial workflow",
-    nodes: [], edges: [], selectedNodeId: null, isDemo: false, past: [], future: [], lastEditKey: null,
+    nodes: [], edges: [], selectedNodeId: null, isDemo: false, currentProcessId: null, currentServerVersion: null, past: [], future: [], lastEditKey: null,
   })),
   exitTutorial: () => set((state) => {
     const backup = state.tutorialBackup;
@@ -241,7 +252,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return {
       workflowName: next.name, nodes: next.nodes, edges: next.edges, selectedNodeId: null,
       isDemo: destination === "demo", tutorialActive: false, tutorialSeen: true, tutorialCompleted: true,
-      tutorialBackup: null, past: [], future: [], lastEditKey: null,
+      tutorialBackup: null, currentProcessId: null, currentServerVersion: null, past: [], future: [], lastEditKey: null,
     };
   }),
   setTutorialStep: (tutorialStep) => set({ tutorialStep: Math.max(0, Math.min(8, tutorialStep)) }),
@@ -260,6 +271,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     tutorialStep: workspace.tutorialStep,
     tutorialEvents: workspace.tutorialEvents,
     tutorialBackup: workspace.tutorialBackup,
+    currentProcessId: null,
+    currentServerVersion: null,
     isDemo: workspace.isDemo,
     hydrated: true,
     past: [],
@@ -267,8 +280,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   } : { hydrated: true }),
   markSaving: () => set({ saveStatus: "saving" }),
   markSaved: () => set({ saveStatus: "saved" }),
+  markSaveError: (offline = false) => set({ saveStatus: offline ? "offline" : "error" }),
+  loadServerProcess: (process) => set({ workflowName: process.name, nodes: process.nodes, edges: process.edges, selectedNodeId: null, isDemo: false, currentProcessId: process.id, currentServerVersion: process.currentVersion, saveStatus: "saved", past: [], future: [], lastEditKey: null }),
+  setServerVersion: (currentServerVersion) => set({ currentServerVersion, saveStatus: "saved" }),
+  clearServerBinding: () => set({ currentProcessId: null, currentServerVersion: null }),
   resetWorkspace: () => {
     const demo = createDemoWorkflow("ru");
-    set({ workflowName: demo.name, nodes: demo.nodes, edges: demo.edges, selectedNodeId: null, locale: "ru", theme: "light", introSeen: false, onboardingSeen: false, tutorialSeen: false, tutorialCompleted: false, tutorialActive: false, tutorialStep: 0, tutorialEvents: emptyTutorialEvents(), tutorialBackup: null, isDemo: true, hydrated: true, saveStatus: "saved", past: [], future: [], lastEditKey: null });
+    set({ workflowName: demo.name, nodes: demo.nodes, edges: demo.edges, selectedNodeId: null, locale: "ru", theme: "light", introSeen: false, onboardingSeen: false, tutorialSeen: false, tutorialCompleted: false, tutorialActive: false, tutorialStep: 0, tutorialEvents: emptyTutorialEvents(), tutorialBackup: null, isDemo: true, hydrated: true, saveStatus: "saved", currentProcessId: null, currentServerVersion: null, past: [], future: [], lastEditKey: null });
   },
 }));

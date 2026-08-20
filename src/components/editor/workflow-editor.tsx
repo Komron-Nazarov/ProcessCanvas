@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { Background, BackgroundVariant, Controls, MarkerType, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow, type NodeTypes } from "@xyflow/react";
 import { Compass } from "lucide-react";
 import { useEditorStore } from "@/store/editor-store";
@@ -19,6 +19,13 @@ import { AboutModal } from "@/components/experience/about-modal";
 import { HelpCenter } from "@/components/experience/help-center";
 import { TutorialOverlay } from "@/components/experience/tutorial-overlay";
 import { SimulationModal } from "@/components/experience/simulation-modal";
+import { AccountProvider, useAccount } from "@/components/account/account-provider";
+import { AuthModal } from "@/components/account/auth-modal";
+import { ProcessLibrary } from "@/components/account/process-library";
+import { VersionHistory } from "@/components/account/version-history";
+import { MigrationPrompt } from "@/components/account/migration-prompt";
+import { api, ApiClientError } from "@/lib/api-client";
+import { clearServerDraft, loadServerDraft, saveServerDraft } from "@/lib/server-draft";
 import { TopBar } from "./top-bar";
 import { NodePalette } from "./node-palette";
 import { PropertiesPanel } from "./properties-panel";
@@ -75,11 +82,17 @@ function EditorCanvas() {
 function Workspace() {
   const { t } = useI18n();
   const { notify } = useToast();
+  const account = useAccount();
+  const accountSession = account.session;
+  const serverSnapshot = useRef<{ id: string | null; fingerprint: string }>({ id: null, fingerprint: "" });
   const [showIntro, setShowIntro] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showRun, setShowRun] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
   const hydrated = useEditorStore((state) => state.hydrated);
   const introSeen = useEditorStore((state) => state.introSeen);
   const tutorialSeen = useEditorStore((state) => state.tutorialSeen);
@@ -103,19 +116,50 @@ function Workspace() {
   const isDemo = useEditorStore((state) => state.isDemo);
   const markSaving = useEditorStore((state) => state.markSaving);
   const markSaved = useEditorStore((state) => state.markSaved);
+  const markSaveError = useEditorStore((state) => state.markSaveError);
+  const currentProcessId = useEditorStore((state) => state.currentProcessId);
 
   useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); document.documentElement.style.colorScheme = theme; }, [theme]);
   useEffect(() => { if (hydrated && !introSeen) setShowIntro(true); }, [hydrated, introSeen]);
   useEffect(() => {
     if (!hydrated) return;
-    markSaving();
     const timer = setTimeout(() => {
       saveWorkspace({ workflowName, nodes, edges, locale, theme, introSeen, onboardingSeen, isDemo, tutorialSeen, tutorialCompleted, tutorialActive, tutorialStep, tutorialEvents, tutorialBackup });
-      markSaved();
+      if (!currentProcessId) markSaved();
       if (tutorialActive && tutorialStep === 7 && !tutorialEvents.autosave) markTutorialEvent("autosave");
     }, 650);
     return () => clearTimeout(timer);
-  }, [edges, hydrated, introSeen, isDemo, locale, markSaved, markSaving, markTutorialEvent, nodes, onboardingSeen, theme, tutorialActive, tutorialBackup, tutorialCompleted, tutorialEvents, tutorialSeen, tutorialStep, workflowName]);
+  }, [currentProcessId, edges, hydrated, introSeen, isDemo, locale, markSaved, markTutorialEvent, nodes, onboardingSeen, theme, tutorialActive, tutorialBackup, tutorialCompleted, tutorialEvents, tutorialSeen, tutorialStep, workflowName]);
+
+  useEffect(() => {
+    if (!hydrated || !accountSession || !currentProcessId || tutorialActive) return;
+    const fingerprint = JSON.stringify([workflowName, nodes, edges]);
+    if (serverSnapshot.current.id !== currentProcessId) { serverSnapshot.current = { id: currentProcessId, fingerprint }; return; }
+    if (serverSnapshot.current.fingerprint === fingerprint) return;
+    markSaving();
+    const timer = window.setTimeout(async () => {
+      const state = useEditorStore.getState();
+      if (!state.currentProcessId || !state.currentServerVersion) return;
+      try {
+        const result = await api.updateProcess(state.currentProcessId, { name: state.workflowName, nodes: state.nodes, edges: state.edges, expectedVersion: state.currentServerVersion });
+        state.setServerVersion(result.process.currentVersion); serverSnapshot.current = { id: state.currentProcessId, fingerprint }; clearServerDraft();
+      } catch (error) {
+        if (error instanceof ApiClientError && (error.code === "network_error" || error.code === "timeout" || error.status >= 500)) { saveServerDraft({ processId: state.currentProcessId, expectedVersion: state.currentServerVersion, name: state.workflowName, nodes: state.nodes, edges: state.edges }); state.markSaveError(true); }
+        else { state.markSaveError(false); }
+      }
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [accountSession, currentProcessId, edges, hydrated, markSaving, nodes, tutorialActive, workflowName]);
+
+  useEffect(() => {
+    const retry = async () => { const draft = loadServerDraft(); if (!draft || draft.processId !== useEditorStore.getState().currentProcessId) return; try { const result = await api.updateProcess(draft.processId, { name: draft.name, nodes: draft.nodes, edges: draft.edges, expectedVersion: draft.expectedVersion }); useEditorStore.getState().setServerVersion(result.process.currentVersion); clearServerDraft(); } catch { markSaveError(true); } };
+    window.addEventListener("online", retry);
+    if (navigator.onLine) void retry();
+    const timer = window.setInterval(() => { if (navigator.onLine && loadServerDraft()) void retry(); }, 5000);
+    return () => { window.removeEventListener("online", retry); window.clearInterval(timer); };
+  }, [currentProcessId, markSaveError]);
+
+  useEffect(() => { const beforeUnload = (event: BeforeUnloadEvent) => { const status = useEditorStore.getState().saveStatus; if (status === "saving" || status === "error" || status === "offline") event.preventDefault(); }; window.addEventListener("beforeunload", beforeUnload); return () => window.removeEventListener("beforeunload", beforeUnload); }, []);
 
   const finishIntro = useCallback(() => { setShowIntro(false); setIntroSeen(true); if (!tutorialSeen) setTimeout(() => setShowWelcome(true), 180); }, [setIntroSeen, tutorialSeen]);
   const skipWelcome = () => { setShowWelcome(false); setOnboardingSeen(true); useEditorStore.setState({ tutorialSeen: true }); };
@@ -123,7 +167,7 @@ function Workspace() {
   const reset = () => { clearWorkspace(); resetWorkspace(); setShowAbout(false); setShowIntro(true); notify(t("toast.reset")); };
   if (!hydrated) return <div className="h-dvh bg-canvas" />;
   return <div className="flex h-dvh min-w-[760px] flex-col overflow-hidden bg-canvas">
-    <TopBar onGuide={() => setShowHelp(true)} onAbout={() => setShowAbout(true)} onRun={() => setShowRun(true)} />
+    <TopBar onGuide={() => setShowHelp(true)} onAbout={() => setShowAbout(true)} onRun={() => setShowRun(true)} onAuth={() => setShowAuth(true)} onProcesses={() => { void account.refreshProcesses(); setShowLibrary(true); }} onVersions={() => setShowVersions(true)} />
     <div className="editor-shell grid min-h-0 flex-1 grid-cols-[220px_minmax(480px,1fr)_292px]"><NodePalette /><ReactFlowProvider><EditorCanvas /></ReactFlowProvider><PropertiesPanel /></div>
     {showIntro && <IntroScreen onFinish={finishIntro} />}
     {showWelcome && <Onboarding onStart={beginTutorial} onSkip={skipWelcome} />}
@@ -131,6 +175,10 @@ function Workspace() {
     {showHelp && <HelpCenter onClose={() => setShowHelp(false)} onTutorial={beginTutorial} onDemo={() => { restoreDemo(); setShowHelp(false); notify(t("toast.demo")); }} />}
     {showAbout && <AboutModal onClose={() => setShowAbout(false)} onReplayIntro={() => { setShowAbout(false); setShowIntro(true); }} onReset={reset} />}
     {showRun && <SimulationModal onClose={() => setShowRun(false)} />}
+    {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+    {showLibrary && <ProcessLibrary onClose={() => setShowLibrary(false)} />}
+    {showVersions && <VersionHistory onClose={() => setShowVersions(false)} />}
+    {account.migrationNeeded && <MigrationPrompt onOpenLibrary={() => setShowLibrary(true)} />}
   </div>;
 }
 
@@ -139,5 +187,5 @@ export function WorkflowEditor() {
   const setLocale = useEditorStore((state) => state.setLocale);
   const hydrate = useEditorStore((state) => state.hydrate);
   useEffect(() => { hydrate(loadWorkspace()); }, [hydrate]);
-  return <I18nProvider locale={locale} setLocale={setLocale}><ToastProvider><Workspace /></ToastProvider></I18nProvider>;
+  return <I18nProvider locale={locale} setLocale={setLocale}><AccountProvider><ToastProvider><Workspace /></ToastProvider></AccountProvider></I18nProvider>;
 }

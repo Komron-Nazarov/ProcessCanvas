@@ -10,6 +10,8 @@ export type PersistedEditorSnapshot = {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   isDemo: boolean;
+  currentProcessId: string | null;
+  currentServerVersion: number | null;
 };
 
 export type PersistedWorkspace = {
