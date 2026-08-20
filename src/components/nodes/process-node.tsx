@@ -4,6 +4,8 @@ import { clsx } from "clsx";
 import { useI18n } from "@/i18n/provider";
 import type { TranslationKey } from "@/i18n/types";
 import type { WorkflowNode, WorkflowNodeType } from "@/types/workflow";
+import { validateWorkflow } from "@/lib/workflow-validation";
+import { useEditorStore } from "@/store/editor-store";
 
 const nodeMeta: Record<WorkflowNodeType, { icon: LucideIcon; label: TranslationKey; tone: string; iconTone: string }> = {
   start: { icon: Play, label: "node.start", tone: "node-tone-start", iconTone: "node-icon-start" },
@@ -13,8 +15,9 @@ const nodeMeta: Record<WorkflowNodeType, { icon: LucideIcon; label: TranslationK
   end: { icon: CircleCheck, label: "node.end", tone: "node-tone-end", iconTone: "node-icon-end" },
 };
 
-export function ProcessNode({ data, type, selected }: NodeProps<WorkflowNode>) {
+export function ProcessNode({ id, data, type, selected }: NodeProps<WorkflowNode>) {
   const { t } = useI18n();
+  const invalid = useEditorStore((state) => validateWorkflow(state.nodes, state.edges).nodeIds.has(id));
   const meta = nodeMeta[type];
   const Icon = meta.icon;
   const isStart = type === "start";
@@ -26,6 +29,7 @@ export function ProcessNode({ data, type, selected }: NodeProps<WorkflowNode>) {
       "process-node relative w-[220px] rounded-[11px] border bg-surface px-3.5 py-3 shadow-node transition-[border,box-shadow,transform]",
       meta.tone,
       selected && "ring-2 ring-brand ring-offset-2 ring-offset-canvas",
+      invalid && "process-node-invalid",
     )}>
       {!isStart && <Handle type="target" position={Position.Left} aria-label={t("node.incoming")} />}
       <div className="flex items-start gap-3">

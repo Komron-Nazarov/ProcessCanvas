@@ -63,6 +63,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .process-node { border-top-color: rgb(var(--line)); border-right-color: rgb(var(--line)); border-bottom-color: rgb(var(--line)); }
 .process-node:hover { box-shadow: 0 10px 24px rgb(23 36 58 / .13); }
 .react-flow__node.selected .process-node { box-shadow: 0 0 0 2px rgb(var(--surface)), 0 0 0 4px rgb(var(--brand)), 0 12px 26px rgb(23 36 58 / .14); }
+.process-node-invalid { border-top-color: rgb(244 63 94 / .75); border-right-color: rgb(244 63 94 / .75); border-bottom-color: rgb(244 63 94 / .75); }
 
 .react-flow__attribution { display: none; }
 .react-flow__controls { overflow: hidden; border: 1px solid rgb(var(--line)); border-radius: 9px; box-shadow: 0 8px 18px rgb(15 23 42 / .08); }
@@ -84,6 +85,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .intro-mark span:last-child { left: 98px; animation-delay: .42s; }
 .animate-modal { animation: modal-in .18s ease-out both; }
 .animate-toast { animation: toast-in .2s ease-out both; }
+.tutorial-card { box-shadow: 0 20px 55px rgb(15 23 42 / .2); }
+body[data-tutorial-step="0"] [data-tutorial-target="palette-start"],
+body[data-tutorial-step="1"] [data-tutorial-target="palette-task"],
+body[data-tutorial-step="4"] [data-tutorial-target="palette-approval"],
+body[data-tutorial-step="5"] [data-tutorial-target="palette-condition"],
+body[data-tutorial-step="2"] [data-tutorial-target="canvas"],
+body[data-tutorial-step="3"] .properties,
+body[data-tutorial-step="6"] .top-bar .icon-button,
+body[data-tutorial-step="7"] .top-bar input + div {
+  position: relative;
+  z-index: 56;
+  border-radius: 10px;
+  box-shadow: 0 0 0 3px rgb(var(--surface)), 0 0 0 6px rgb(var(--brand) / .7), 0 10px 30px rgb(var(--brand) / .22);
+}
 @keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 @keyframes intro-node { from { opacity: 0; transform: scale(.4); } }

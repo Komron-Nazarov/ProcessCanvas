@@ -11,6 +11,7 @@ import { create } from "zustand";
 import { createDemoWorkflow, getNodeDefaults } from "@/data/demo-workflow";
 import type { Locale } from "@/i18n/types";
 import type { PersistedWorkspace } from "@/lib/persistence";
+import { emptyTutorialEvents, type TutorialEvent, type TutorialEvents } from "@/lib/tutorial";
 import type { WorkflowEdge, WorkflowNode, WorkflowNodeData, WorkflowNodeType } from "@/types/workflow";
 
 type EditorSnapshot = { workflowName: string; nodes: WorkflowNode[]; edges: WorkflowEdge[]; isDemo: boolean };
@@ -25,6 +26,12 @@ type EditorState = {
   theme: "light" | "dark";
   introSeen: boolean;
   onboardingSeen: boolean;
+  tutorialSeen: boolean;
+  tutorialCompleted: boolean;
+  tutorialActive: boolean;
+  tutorialStep: number;
+  tutorialEvents: TutorialEvents;
+  tutorialBackup: EditorSnapshot | null;
   isDemo: boolean;
   hydrated: boolean;
   saveStatus: SaveStatus;
@@ -51,6 +58,11 @@ type EditorState = {
   setTheme: (theme: "light" | "dark") => void;
   setIntroSeen: (seen: boolean) => void;
   setOnboardingSeen: (seen: boolean) => void;
+  startTutorial: () => void;
+  exitTutorial: () => void;
+  completeTutorial: (destination: "blank" | "demo") => void;
+  setTutorialStep: (step: number) => void;
+  markTutorialEvent: (event: TutorialEvent) => void;
   hydrate: (workspace: PersistedWorkspace | null) => void;
   markSaving: () => void;
   markSaved: () => void;
@@ -80,6 +92,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   theme: "light",
   introSeen: false,
   onboardingSeen: false,
+  tutorialSeen: false,
+  tutorialCompleted: false,
+  tutorialActive: false,
+  tutorialStep: 0,
+  tutorialEvents: emptyTutorialEvents(),
+  tutorialBackup: null,
   isDemo: true,
   hydrated: false,
   saveStatus: "saved",
@@ -147,6 +165,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isDemo: false,
       lastEditKey: editKey,
       lastEditAt: now,
+      tutorialEvents: state.tutorialActive ? { ...state.tutorialEvents, edit: true } : state.tutorialEvents,
     };
   }),
   duplicateSelected: () => {
@@ -183,14 +202,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const state = get();
     const previous = state.past.at(-1);
     if (!previous) return false;
-    set({ ...previous, nodes: cloneNodes(previous.nodes), edges: cloneEdges(previous.edges), selectedNodeId: null, past: state.past.slice(0, -1), future: [capture(state), ...state.future].slice(0, HISTORY_LIMIT), lastEditKey: null });
+    set({ ...previous, nodes: cloneNodes(previous.nodes), edges: cloneEdges(previous.edges), selectedNodeId: null, past: state.past.slice(0, -1), future: [capture(state), ...state.future].slice(0, HISTORY_LIMIT), lastEditKey: null, tutorialEvents: state.tutorialActive ? { ...state.tutorialEvents, undo: true } : state.tutorialEvents });
     return true;
   },
   redo: () => {
     const state = get();
     const next = state.future[0];
     if (!next) return false;
-    set({ ...next, nodes: cloneNodes(next.nodes), edges: cloneEdges(next.edges), selectedNodeId: null, past: [...state.past, capture(state)].slice(-HISTORY_LIMIT), future: state.future.slice(1), lastEditKey: null });
+    set({ ...next, nodes: cloneNodes(next.nodes), edges: cloneEdges(next.edges), selectedNodeId: null, past: [...state.past, capture(state)].slice(-HISTORY_LIMIT), future: state.future.slice(1), lastEditKey: null, tutorialEvents: state.tutorialActive ? { ...state.tutorialEvents, redo: true } : state.tutorialEvents });
     return true;
   },
   setLocale: (locale) => set((state) => {
@@ -201,6 +220,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setTheme: (theme) => set({ theme }),
   setIntroSeen: (introSeen) => set({ introSeen }),
   setOnboardingSeen: (onboardingSeen) => set({ onboardingSeen }),
+  startTutorial: () => set((state) => ({
+    tutorialSeen: true,
+    tutorialActive: true,
+    tutorialStep: 0,
+    tutorialEvents: emptyTutorialEvents(),
+    tutorialBackup: state.tutorialActive ? state.tutorialBackup : capture(state),
+    workflowName: state.locale === "ru" ? "Учебный процесс" : "Tutorial workflow",
+    nodes: [], edges: [], selectedNodeId: null, isDemo: false, past: [], future: [], lastEditKey: null,
+  })),
+  exitTutorial: () => set((state) => {
+    const backup = state.tutorialBackup;
+    return {
+      ...(backup ?? capture(state)), tutorialActive: false, tutorialSeen: true, tutorialBackup: null,
+      selectedNodeId: null, past: [], future: [], lastEditKey: null,
+    };
+  }),
+  completeTutorial: (destination) => set((state) => {
+    const next = destination === "demo" ? createDemoWorkflow(state.locale) : { name: state.locale === "ru" ? "Новый процесс" : "New workflow", nodes: [], edges: [] };
+    return {
+      workflowName: next.name, nodes: next.nodes, edges: next.edges, selectedNodeId: null,
+      isDemo: destination === "demo", tutorialActive: false, tutorialSeen: true, tutorialCompleted: true,
+      tutorialBackup: null, past: [], future: [], lastEditKey: null,
+    };
+  }),
+  setTutorialStep: (tutorialStep) => set({ tutorialStep: Math.max(0, Math.min(8, tutorialStep)) }),
+  markTutorialEvent: (event) => set((state) => ({ tutorialEvents: { ...state.tutorialEvents, [event]: true } })),
   hydrate: (workspace) => set(() => workspace ? {
     workflowName: workspace.workflowName,
     nodes: workspace.nodes,
@@ -209,6 +254,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     theme: workspace.theme,
     introSeen: workspace.introSeen,
     onboardingSeen: workspace.onboardingSeen,
+    tutorialSeen: workspace.tutorialSeen,
+    tutorialCompleted: workspace.tutorialCompleted,
+    tutorialActive: workspace.tutorialActive,
+    tutorialStep: workspace.tutorialStep,
+    tutorialEvents: workspace.tutorialEvents,
+    tutorialBackup: workspace.tutorialBackup,
     isDemo: workspace.isDemo,
     hydrated: true,
     past: [],
@@ -218,6 +269,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   markSaved: () => set({ saveStatus: "saved" }),
   resetWorkspace: () => {
     const demo = createDemoWorkflow("ru");
-    set({ workflowName: demo.name, nodes: demo.nodes, edges: demo.edges, selectedNodeId: null, locale: "ru", theme: "light", introSeen: false, onboardingSeen: false, isDemo: true, hydrated: true, saveStatus: "saved", past: [], future: [], lastEditKey: null });
+    set({ workflowName: demo.name, nodes: demo.nodes, edges: demo.edges, selectedNodeId: null, locale: "ru", theme: "light", introSeen: false, onboardingSeen: false, tutorialSeen: false, tutorialCompleted: false, tutorialActive: false, tutorialStep: 0, tutorialEvents: emptyTutorialEvents(), tutorialBackup: null, isDemo: true, hydrated: true, saveStatus: "saved", past: [], future: [], lastEditKey: null });
   },
 }));
