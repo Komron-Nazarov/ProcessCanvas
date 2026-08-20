@@ -12,6 +12,7 @@ const config: Config = {
         canvas: "rgb(var(--canvas) / <alpha-value>)",
         line: "rgb(var(--line) / <alpha-value>)",
         brand: "rgb(var(--brand) / <alpha-value>)",
+        "brand-soft": "rgb(var(--brand-soft) / <alpha-value>)",
       },
       boxShadow: {
         panel: "0 12px 32px rgba(15, 23, 42, 0.08)",
