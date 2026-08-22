@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: processcanvas
       POSTGRES_USER: processcanvas
-      POSTGRES_PASSWORD: processcanvas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-processcanvas}
     ports:
       - "5433:5432"
     volumes:
@@ -15,6 +15,44 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://processcanvas:${POSTGRES_PASSWORD:-processcanvas}@postgres:5432/processcanvas?sslmode=disable
+      HTTP_PORT: "8080"
+      FRONTEND_URL: http://localhost:3000
+      APP_ENV: ${APP_ENV:-development}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-336}
+      AUTH_RATE_LIMIT_PER_MINUTE: ${AUTH_RATE_LIMIT_PER_MINUTE:-10}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      args:
+        GO_API_URL: http://backend:8080
+    restart: unless-stopped
+    environment:
+      GO_API_URL: http://backend:8080
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   processcanvas_postgres:

@@ -4,6 +4,7 @@
 
 # next.js
 /.next/
+/.next-*/
 /out/
 
 # production
@@ -19,3 +20,6 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 pnpm-debug.log*
+/coverage/
+/playwright-report/
+/test-results/
