@@ -20,7 +20,7 @@ type Config struct {
 func Load() (Config, error) {
 	cfg := Config{
 		Environment: value("APP_ENV", "development"),
-		HTTPPort:    value("HTTP_PORT", "8080"),
+		HTTPPort:    firstValue("HTTP_PORT", "PORT", "8080"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		FrontendURL: value("FRONTEND_URL", "http://localhost:3000"),
 		CookieName:  value("SESSION_COOKIE_NAME", "processcanvas_session"),
@@ -46,6 +46,13 @@ func value(key, fallback string) string {
 		return result
 	}
 	return fallback
+}
+
+func firstValue(primary, secondary, fallback string) string {
+	if result := os.Getenv(primary); result != "" {
+		return result
+	}
+	return value(secondary, fallback)
 }
 
 func (c Config) SecureCookie() bool { return c.Environment == "production" }
