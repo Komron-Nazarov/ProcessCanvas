@@ -1,0 +1,15 @@
+{
+  "format": "processcanvas",
+  "version": 1,
+  "exportedAt": "2026-08-22T00:00:00.000Z",
+  "workflow": {
+    "name": "Импортированный процесс",
+    "nodes": [
+      { "id": "import-start", "type": "start", "position": { "x": 50, "y": 100 }, "data": { "label": "Старт импорта", "description": "Проверка файла", "assignee": "", "duration": "" } },
+      { "id": "import-end", "type": "end", "position": { "x": 350, "y": 100 }, "data": { "label": "Импорт готов", "description": "Файл загружен", "assignee": "", "duration": "" } }
+    ],
+    "edges": [
+      { "id": "import-edge", "source": "import-start", "target": "import-end", "type": "smoothstep" }
+    ]
+  }
+}
