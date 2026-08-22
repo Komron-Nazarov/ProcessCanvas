@@ -24,7 +24,9 @@ import { AuthModal } from "@/components/account/auth-modal";
 import { ProcessLibrary } from "@/components/account/process-library";
 import { VersionHistory } from "@/components/account/version-history";
 import { MigrationPrompt } from "@/components/account/migration-prompt";
-import { api, ApiClientError } from "@/lib/api-client";
+import { ConflictResolution } from "@/components/account/conflict-resolution";
+import { WorkflowTools } from "@/components/experience/workflow-tools";
+import { api, ApiClientError, type ApiProcess } from "@/lib/api-client";
 import { clearServerDraft, loadServerDraft, saveServerDraft } from "@/lib/server-draft";
 import { TopBar } from "./top-bar";
 import { NodePalette } from "./node-palette";
@@ -84,7 +86,7 @@ function Workspace() {
   const { notify } = useToast();
   const account = useAccount();
   const accountSession = account.session;
-  const serverSnapshot = useRef<{ id: string | null; fingerprint: string }>({ id: null, fingerprint: "" });
+  const serverSnapshot = useRef<{ id: string | null; version: number | null; fingerprint: string }>({ id: null, version: null, fingerprint: "" });
   const [showIntro, setShowIntro] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -93,6 +95,8 @@ function Workspace() {
   const [showAuth, setShowAuth] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const [showTools, setShowTools] = useState(false);
+  const [conflict, setConflict] = useState<ApiProcess | null>(null);
   const hydrated = useEditorStore((state) => state.hydrated);
   const introSeen = useEditorStore((state) => state.introSeen);
   const tutorialSeen = useEditorStore((state) => state.tutorialSeen);
@@ -118,6 +122,7 @@ function Workspace() {
   const markSaved = useEditorStore((state) => state.markSaved);
   const markSaveError = useEditorStore((state) => state.markSaveError);
   const currentProcessId = useEditorStore((state) => state.currentProcessId);
+  const currentServerVersion = useEditorStore((state) => state.currentServerVersion);
 
   useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); document.documentElement.style.colorScheme = theme; }, [theme]);
   useEffect(() => { if (hydrated && !introSeen) setShowIntro(true); }, [hydrated, introSeen]);
@@ -134,7 +139,7 @@ function Workspace() {
   useEffect(() => {
     if (!hydrated || !accountSession || !currentProcessId || tutorialActive) return;
     const fingerprint = JSON.stringify([workflowName, nodes, edges]);
-    if (serverSnapshot.current.id !== currentProcessId) { serverSnapshot.current = { id: currentProcessId, fingerprint }; return; }
+    if (serverSnapshot.current.id !== currentProcessId || serverSnapshot.current.version !== currentServerVersion) { serverSnapshot.current = { id: currentProcessId, version: currentServerVersion, fingerprint }; return; }
     if (serverSnapshot.current.fingerprint === fingerprint) return;
     markSaving();
     const timer = window.setTimeout(async () => {
@@ -142,17 +147,18 @@ function Workspace() {
       if (!state.currentProcessId || !state.currentServerVersion) return;
       try {
         const result = await api.updateProcess(state.currentProcessId, { name: state.workflowName, nodes: state.nodes, edges: state.edges, expectedVersion: state.currentServerVersion });
-        state.setServerVersion(result.process.currentVersion); serverSnapshot.current = { id: state.currentProcessId, fingerprint }; clearServerDraft();
+        state.setServerVersion(result.process.currentVersion); serverSnapshot.current = { id: state.currentProcessId, version: result.process.currentVersion, fingerprint }; clearServerDraft();
       } catch (error) {
         if (error instanceof ApiClientError && (error.code === "network_error" || error.code === "timeout" || error.status >= 500)) { saveServerDraft({ processId: state.currentProcessId, expectedVersion: state.currentServerVersion, name: state.workflowName, nodes: state.nodes, edges: state.edges }); state.markSaveError(true); }
+        else if (error instanceof ApiClientError && error.code === "version_conflict" && error.process) { saveServerDraft({ processId: state.currentProcessId, expectedVersion: state.currentServerVersion, name: state.workflowName, nodes: state.nodes, edges: state.edges }); state.markSaveError(false); setConflict(error.process); }
         else { state.markSaveError(false); }
       }
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [accountSession, currentProcessId, edges, hydrated, markSaving, nodes, tutorialActive, workflowName]);
+  }, [accountSession, currentProcessId, currentServerVersion, edges, hydrated, markSaving, nodes, tutorialActive, workflowName]);
 
   useEffect(() => {
-    const retry = async () => { const draft = loadServerDraft(); if (!draft || draft.processId !== useEditorStore.getState().currentProcessId) return; try { const result = await api.updateProcess(draft.processId, { name: draft.name, nodes: draft.nodes, edges: draft.edges, expectedVersion: draft.expectedVersion }); useEditorStore.getState().setServerVersion(result.process.currentVersion); clearServerDraft(); } catch { markSaveError(true); } };
+    const retry = async () => { const draft = loadServerDraft(); if (!draft || draft.processId !== useEditorStore.getState().currentProcessId) return; try { const result = await api.updateProcess(draft.processId, { name: draft.name, nodes: draft.nodes, edges: draft.edges, expectedVersion: draft.expectedVersion }); useEditorStore.getState().setServerVersion(result.process.currentVersion); clearServerDraft(); } catch (error) { if (error instanceof ApiClientError && error.code === "version_conflict" && error.process) { markSaveError(false); setConflict(error.process); } else markSaveError(true); } };
     window.addEventListener("online", retry);
     if (navigator.onLine) void retry();
     const timer = window.setInterval(() => { if (navigator.onLine && loadServerDraft()) void retry(); }, 5000);
@@ -167,7 +173,7 @@ function Workspace() {
   const reset = () => { clearWorkspace(); resetWorkspace(); setShowAbout(false); setShowIntro(true); notify(t("toast.reset")); };
   if (!hydrated) return <div className="h-dvh bg-canvas" />;
   return <div className="flex h-dvh min-w-[760px] flex-col overflow-hidden bg-canvas">
-    <TopBar onGuide={() => setShowHelp(true)} onAbout={() => setShowAbout(true)} onRun={() => setShowRun(true)} onAuth={() => setShowAuth(true)} onProcesses={() => { void account.refreshProcesses(); setShowLibrary(true); }} onVersions={() => setShowVersions(true)} />
+    <TopBar onGuide={() => setShowHelp(true)} onAbout={() => setShowAbout(true)} onRun={() => setShowRun(true)} onAuth={() => setShowAuth(true)} onProcesses={() => { void account.refreshProcesses(); setShowLibrary(true); }} onVersions={() => setShowVersions(true)} onTools={() => setShowTools(true)} />
     <div className="editor-shell grid min-h-0 flex-1 grid-cols-[220px_minmax(480px,1fr)_292px]"><NodePalette /><ReactFlowProvider><EditorCanvas /></ReactFlowProvider><PropertiesPanel /></div>
     {showIntro && <IntroScreen onFinish={finishIntro} />}
     {showWelcome && <Onboarding onStart={beginTutorial} onSkip={skipWelcome} />}
@@ -178,6 +184,8 @@ function Workspace() {
     {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
     {showLibrary && <ProcessLibrary onClose={() => setShowLibrary(false)} />}
     {showVersions && <VersionHistory onClose={() => setShowVersions(false)} />}
+    {showTools && <WorkflowTools onClose={() => setShowTools(false)} />}
+    {conflict && <ConflictResolution serverProcess={conflict} onLoadServer={() => { useEditorStore.getState().loadServerProcess(conflict); clearServerDraft(); serverSnapshot.current = { id: conflict.id, version: conflict.currentVersion, fingerprint: JSON.stringify([conflict.name, conflict.nodes, conflict.edges]) }; setConflict(null); }} onSaveCopy={async () => { await account.createProcess(true); clearServerDraft(); setConflict(null); }} onKeepLocal={() => setConflict(null)} />}
     {account.migrationNeeded && <MigrationPrompt onOpenLibrary={() => setShowLibrary(true)} />}
   </div>;
 }

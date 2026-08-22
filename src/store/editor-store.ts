@@ -73,6 +73,7 @@ type EditorState = {
   loadServerProcess: (process: ApiProcess) => void;
   setServerVersion: (version: number) => void;
   clearServerBinding: () => void;
+  loadLocalWorkflow: (name: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) => void;
   resetWorkspace: () => void;
 };
 
@@ -284,6 +285,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   loadServerProcess: (process) => set({ workflowName: process.name, nodes: process.nodes, edges: process.edges, selectedNodeId: null, isDemo: false, currentProcessId: process.id, currentServerVersion: process.currentVersion, saveStatus: "saved", past: [], future: [], lastEditKey: null }),
   setServerVersion: (currentServerVersion) => set({ currentServerVersion, saveStatus: "saved" }),
   clearServerBinding: () => set({ currentProcessId: null, currentServerVersion: null }),
+  loadLocalWorkflow: (workflowName, nodes, edges) => set((state) => ({ ...history(state), workflowName, nodes: cloneNodes(nodes), edges: cloneEdges(edges), selectedNodeId: null, isDemo: false, currentProcessId: null, currentServerVersion: null, saveStatus: "saved", lastEditKey: null })),
   resetWorkspace: () => {
     const demo = createDemoWorkflow("ru");
     set({ workflowName: demo.name, nodes: demo.nodes, edges: demo.edges, selectedNodeId: null, locale: "ru", theme: "light", introSeen: false, onboardingSeen: false, tutorialSeen: false, tutorialCompleted: false, tutorialActive: false, tutorialStep: 0, tutorialEvents: emptyTutorialEvents(), tutorialBackup: null, isDemo: true, hydrated: true, saveStatus: "saved", currentProcessId: null, currentServerVersion: null, past: [], future: [], lastEditKey: null });
