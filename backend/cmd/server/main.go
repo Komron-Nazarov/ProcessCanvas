@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	authservice "processcanvas/backend/internal/auth"
 	"processcanvas/backend/internal/config"
 	"processcanvas/backend/internal/database"
 	"processcanvas/backend/internal/httpapi"
@@ -34,6 +35,20 @@ func main() {
 		logger.Error("database migration failed", "error", err)
 		os.Exit(1)
 	}
+	cleanup := authservice.New(pool, cfg.SessionTTL)
+	cleanup.DeleteExpired(ctx)
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				cleanup.DeleteExpired(ctx)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 	server := &http.Server{Addr: ":" + cfg.HTTPPort, Handler: httpapi.New(cfg, pool, logger), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	go func() {
 		logger.Info("ProcessCanvas Go API started", "port", cfg.HTTPPort, "environment", cfg.Environment)

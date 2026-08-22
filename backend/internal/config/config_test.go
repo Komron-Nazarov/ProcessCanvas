@@ -12,11 +12,12 @@ func TestLoadRequiresDatabaseURL(t *testing.T) {
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("SESSION_TTL_HOURS", "")
+	t.Setenv("AUTH_RATE_LIMIT_PER_MINUTE", "")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.HTTPPort != "8080" || cfg.SessionTTL.Hours() != 336 {
+	if cfg.HTTPPort != "8080" || cfg.SessionTTL.Hours() != 336 || cfg.AuthRateLimit != 10 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 }

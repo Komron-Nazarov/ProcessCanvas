@@ -8,12 +8,13 @@ import (
 )
 
 type Config struct {
-	Environment string
-	HTTPPort    string
-	DatabaseURL string
-	FrontendURL string
-	CookieName  string
-	SessionTTL  time.Duration
+	Environment   string
+	HTTPPort      string
+	DatabaseURL   string
+	FrontendURL   string
+	CookieName    string
+	SessionTTL    time.Duration
+	AuthRateLimit int
 }
 
 func Load() (Config, error) {
@@ -32,6 +33,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("SESSION_TTL_HOURS must be between 1 and 8760")
 	}
 	cfg.SessionTTL = time.Duration(hours) * time.Hour
+	limit, err := strconv.Atoi(value("AUTH_RATE_LIMIT_PER_MINUTE", "10"))
+	if err != nil || limit < 3 || limit > 1000 {
+		return Config{}, fmt.Errorf("AUTH_RATE_LIMIT_PER_MINUTE must be between 3 and 1000")
+	}
+	cfg.AuthRateLimit = limit
 	return cfg, nil
 }
 

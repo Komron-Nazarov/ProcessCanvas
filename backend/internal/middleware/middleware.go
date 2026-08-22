@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
+	"sync"
 	"time"
 )
 
@@ -55,6 +57,69 @@ func CORS(frontend string, next http.Handler) http.Handler {
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		next.ServeHTTP(w, r)
+	})
+}
+
+type rateWindow struct {
+	started time.Time
+	count   int
+}
+
+type RateLimiter struct {
+	mu      sync.Mutex
+	limit   int
+	window  time.Duration
+	clients map[string]rateWindow
+}
+
+func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
+	if limit < 1 {
+		limit = 10
+	}
+	return &RateLimiter{limit: limit, window: window, clients: make(map[string]rateWindow)}
+}
+
+func (l *RateLimiter) Wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		now := time.Now()
+		l.mu.Lock()
+		entry := l.clients[host]
+		if entry.started.IsZero() || now.Sub(entry.started) >= l.window {
+			entry = rateWindow{started: now}
+		}
+		entry.count++
+		l.clients[host] = entry
+		limited := entry.count > l.limit
+		if len(l.clients) > 10000 {
+			for key, value := range l.clients {
+				if now.Sub(value.started) >= l.window {
+					delete(l.clients, key)
+				}
+			}
+		}
+		l.mu.Unlock()
+		if limited {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"code":"rate_limited","message":"Too many authentication attempts"}}`))
 			return
 		}
 		next.ServeHTTP(w, r)

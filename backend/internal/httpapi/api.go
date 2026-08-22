@@ -31,11 +31,12 @@ const currentSessionKey sessionKey = "session"
 
 func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) http.Handler {
 	api := &API{cfg: cfg, pool: pool, auth: authservice.New(pool, cfg.SessionTTL), processes: processservice.New(pool), logger: logger}
+	authLimiter := appmiddleware.NewRateLimiter(cfg.AuthRateLimit, time.Minute)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", api.health)
 	mux.HandleFunc("GET /ready", api.ready)
-	mux.HandleFunc("POST /api/auth/register", api.register)
-	mux.HandleFunc("POST /api/auth/login", api.login)
+	mux.Handle("POST /api/auth/register", authLimiter.Wrap(http.HandlerFunc(api.register)))
+	mux.Handle("POST /api/auth/login", authLimiter.Wrap(http.HandlerFunc(api.login)))
 	mux.HandleFunc("POST /api/auth/logout", api.logout)
 	mux.Handle("GET /api/auth/session", api.requireAuth(http.HandlerFunc(api.session)))
 	mux.Handle("GET /api/processes", api.requireAuth(http.HandlerFunc(api.listProcesses)))
@@ -51,6 +52,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) http.Handle
 	handler = appmiddleware.Log(logger, handler)
 	handler = appmiddleware.Recover(logger, handler)
 	handler = appmiddleware.RequestID(handler)
+	handler = appmiddleware.SecurityHeaders(handler)
 	return handler
 }
 
